@@ -2,26 +2,33 @@
 
 Système bancaire concurrent (mini core banking)
 
-Ce dépôt contient un projet .NET 8 (C#) complet — backend, tests de robustesse, logger d'audit asynchrone et détecteur de fraude en thread séparé — conçu pour simuler des transactions concurrentes entre comptes.
+Ce dépôt contient un projet **.NET 8 (C#)** complet :
+- Backend minimal API
+- Tests de robustesse
+- Logger d'audit asynchrone
+- Détecteur de fraude en thread séparé
 
-Conception principale
+Le but est de simuler des transactions concurrentes entre comptes.
 
-Accounts in-memory (id long, balance long in cents).
+---
 
-Transferts atomiques entre comptes.
+## 🔹 Conception principale
 
-Verrouillage fin avec lock hiérarchisé par ID de compte (pour éviter deadlocks).
+- **Accounts in-memory** : `(id: long, balance: long en centimes)`
+- **Transferts atomiques** entre comptes
+- **Verrouillage fin** avec lock hiérarchisé par ID de compte (évite les deadlocks)
+- **Audit logging asynchrone** via une queue (ne bloque pas les transactions)
+- **Tests de charge multi-thread** (milliers de transactions) vérifiant l’intégrité (somme totale constante)
+- **Détecteur de fraude** qui scanne les transactions en temps réel
 
-Audit logging asynchrone via queue (ne bloque pas les transactions).
+---
 
-Tests de charge multi-thread (milliers de transactions) qui vérifient l'intégrité (somme totale constante).
+## 📂 Arborescence du projet
 
-Détecteur de fraude qui scanne les transactions pendant l'exécution.
-
-Arborescence du projet
+```plaintext
 ConcurrentBankingSystem/
 ├─ src/
-│  ├─ ConcurrentBanking.Api/    (ASP.NET Core minimal API)
+│  ├─ ConcurrentBanking.Api/         (ASP.NET Core minimal API)
 │  │  ├─ Program.cs
 │  │  ├─ Models/Account.cs
 │  │  ├─ Models/DTOs.cs
@@ -31,7 +38,7 @@ ConcurrentBankingSystem/
 │  │  ├─ Services/AuditLogger.cs
 │  │  ├─ Services/FraudDetector.cs
 │  │  └─ appsettings.json
-│  └─ ConcurrentBanking.LoadTest/ (Console test runner)
+│  └─ ConcurrentBanking.LoadTest/    (Console test runner)
 │     └─ Program.cs
 ├─ tests/
 │  └─ ConcurrentBanking.Tests/
@@ -39,30 +46,71 @@ ConcurrentBankingSystem/
 ├─ docker-compose.yml
 ├─ Dockerfile
 └─ README.md
-Choix techniques & raisons
+```
+---
 
-Langage : C# (.NET 8). utilisation de Interlocked et Monitor — d'ou le choix de C#.
+## ⚙️ Choix techniques & raisons
 
-Atomicité : on utilise Interlocked pour opérations simples et Monitor (via lock / Monitor.Enter) pour sections critiques lors de transferts entre 2 comptes.
+- **Langage** : C# (.NET 8) — usage de `Interlocked` et `Monitor`
+- **Atomicité** :
+    - `Interlocked` pour les opérations simples
+    - `Monitor` (`lock` / `Monitor.Enter`) pour les sections critiques
+- **Lock hiérarchisé** : acquisition des verrous par ordre croissant d’`accountId` (évite les deadlocks)
+- **Audit** : `BlockingCollection<LogEntry>` consommée par un worker → écrit vers console/fichier (asynchrone, non bloquant)
+- **Tests de charge** : `Task.Run` + `Parallel` + `SemaphoreSlim` → génèrent des milliers de transactions
+- **Fraude** : thread séparé lisant le flux d’audit et détectant transactions suspectes (seuil/pattern)
 
-Lock hiérarchisé : toujours acquérir les verrous dans l'ordre croissant d'accountId pour éviter deadlocks.
+---
 
-Audit : une BlockingCollection<LogEntry> consommée par un worker pour écrire vers console / fichier (asynchrone, non bloquant pour la logique métier).
+## 🚀 Installation (prérequis)
 
-Tests de charge : Task.Run + Parallel + SemaphoreSlim pour générer des milliers de transactions.
+- [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
+- [Docker](https://www.docker.com/)
 
-Fraude : thread séparé qui lit le flux d'audit et alerte quand une transaction dépasse un seuil ou pattern suspect.
+---
 
-Installation (prérequis)
+## ▶️ Lancer localement
 
-.NET 8 SDK installé
-
-Docker
-
-Lancer localement
-
+### API
+```bash
 cd src/ConcurrentBanking.Api
+dotnet run
 
-dotnet run (API démarrera sur http://localhost:5000 par défaut)
+➡️ L’API démarre sur http://localhost:5000
 
-Dans un autre terminal, cd src/ConcurrentBanking.LoadTest puis dotnet run pour lancer la simulation de transactions.
+cd src/ConcurrentBanking.LoadTest
+dotnet run
+```
+
+🌐 API Endpoints
+
+- Récupérer tous les comptes
+
+curl http://localhost:5000/accounts
+
+- Récupérer un compte par ID
+
+curl http://localhost:5000/accounts/1
+
+- Créer un compte
+
+curl -X POST http://localhost:5000/accounts \
+-H "Content-Type: application/json" \
+-d '{"id": 1, "balance": 10000}'
+
+- Effectuer un transfert
+
+curl -X POST http://localhost:5000/transfer \
+-H "Content-Type: application/json" \
+-d '{"fromAccountId": 1, "toAccountId": 2, "amount": 500}'
+
+
+🔹 Audit & Fraude
+
+- Récupérer les logs d’audit
+
+curl http://localhost:5000/audit
+
+- Récupérer les alertes de fraude
+
+curl http://localhost:5000/fraud
